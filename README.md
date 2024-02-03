@@ -34,11 +34,11 @@ run in cmd in cloned directory:
 
 Replace `https://yourdomain.com` with your actual domain or * for testing purposes (not recommended for production).
 
-<CORSConfiguration>
+`<CORSConfiguration>
  <CORSRule>
    <AllowedOrigin>https://yourdomain.com</AllowedOrigin>
    <AllowedMethod>PUT</AllowedMethod>
    <AllowedMethod>POST</AllowedMethod>
    <AllowedHeader>*</AllowedHeader>
  </CORSRule>
-</CORSConfiguration>
+</CORSConfiguration>`
