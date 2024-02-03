@@ -31,9 +31,19 @@
          // Upload one file at a time since we're using the S3 pre-signed URL scenario
         parallelUploads: 1,
         uploadMultiple: false,
-        
+
         timeout: 0, // No timeout for the XHR request
         maxFilesize: null, // No limit on the file size
+
+        //chunking
+        chunking: true,
+        forceChunking: true,
+        chunkSize: 5 * 1024 * 1024, // 5MB chunk size
+        parallelChunkUploads: false,
+        retryChunks: true,
+        retryChunksLimit: 3,
+        defaultHeaders: false,
+        binaryBody: true,
 
         autoProcessQueue: false,
 
@@ -41,35 +51,74 @@
         // mismatch error from S3. We're going to update this for each file.
         headers: '',
       
-        // dictDefaultMessage: document.querySelector('#dropzone-message').innerHTML,
-        sending: function(file, xhr) {
-            // Set the Content-Type header for the file.
-            xhr.setRequestHeader('Content-Type', file.type);
-            
-            //Override default behaviour of Dropzone which uses FormData to send the file.
-            let _send = xhr.send;
-            xhr.send = () => {
-                // Call the original send function with the file as the body
-                _send.call(xhr, file);
-            };
-        },
-        accept: function(file, done) {
-            axios.get('/presigned-url', {
-                params: { file_name: file.name, file_type: file.type }
-            }).then(function(response) {
-                // Set the upload URL to the pre-signed URL.
-                file.uploadURL = response.data.url;
-                done();
-                setTimeout(() => myDropzone.processFile(file));
-                
-            }).catch(function(error) {
-                done('Failed to get an S3 signed upload URL');
+        init: function() {
+            this.on("addedfile", function(file) {
+                // Initiate multipart upload and get upload ID
+                axios.post('/s3/initiate-multipart-upload', {
+                    file_name: file.name,
+                    file_type: file.type
+                }).then(function(response) {
+                    file.uploadId = response.data.uploadId;
+                    file.s3Key = response.data.key;
+                    myDropzone.processFile(file); // Start processing file
+                }).catch(function(error) {
+                    console.error("Failed to initiate S3 upload", error);
+                });
             });
+
+            this.on("sending", function(file, xhr, formData) {
+                // Override the default sending behavior to use raw file data
+                let _send = xhr.send;
+                xhr.send = () => _send.call(xhr, file);
+            });
+
+            this.on("uploadprogress", function(file, progress) {
+                console.log(`File progress: ${progress}%`);
+            });
+
+            this.on("error", function(file, response) {
+                console.error("Dropzone error:", response);
+            });
+
+            this.on("success", function(file, response) {
+                console.log("File uploaded successfully:", response);
+            });
+            this.on("chunksUploaded", function (file, done) {
+                 // This function is called when all chunks have been uploaded // We need to tell S3 to complete the multipart upload axios.post('/s3/complete-multipart-upload', { key: file.s3Key, uploadId: file.uploadId, parts: file.uploadedChunks.map((chunk, index) => ({ ETag: chunk.xhr.getResponseHeader('ETag'), PartNumber: index + 1 })) }).then(function(response) { console.log("Multipart upload completed:", response.data); done(); }).catch(function(error) { console.error("Failed to complete S3 upload", error); done("Failed to complete upload"); }); });
+            
         }
     });
 
-    myDropzone.on('processing', function(file) {
-        myDropzone.options.url = file.uploadURL;
+    myDropzone.on('sending', function(file, xhr) {
+        // Get presigned URL for each chunk
+        axios.get('/s3/generate-presigned-url', {
+            params: {
+                key: file.s3Key,
+                uploadId: file.uploadId,
+                partNumber: file.upload.chunkIndex + 1
+            }
+        }).then(function(response) {
+            // Set the upload URL to the pre-signed URL
+            xhr.open(myDropzone.options.method, response.data.url, true);
+        }).catch(function(error) {
+            console.error("Failed to get a presigned URL for chunk", error);
+        });
+    });
+
+    myDropzone.on('complete', function(file) {
+        // Complete multipart upload after all chunks are uploaded
+        axios.post('/s3/complete-multipart-upload', {
+            key: file.s3Key,
+            uploadId: file.uploadId,
+            parts: file.upload.chunks.map(chunk => ({
+                ETag: chunk.xhr.getResponseHeader('ETag'),
+                PartNumber: chunk.index + 1
+            }))
+        }).then(function(response) {
+            console.log("Multipart upload completed:", response.data);
+        }).catch(function(error) {
+            console.error("Failed to complete S3 upload", error);
+        });
     });
 </script>
 

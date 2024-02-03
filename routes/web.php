@@ -18,5 +18,9 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/presigned-url', [FileController::class  , 'generatePresignedUrl']);
+// Route::get('/presigned-url', [FileController::class  , 'generatePresignedUrl']);
+
+Route::post('/s3/initiate-multipart-upload', [FileController::class, 'initiateMultipartUpload']);
+Route::get('/s3/generate-presigned-url', [FileController::class, 'generatePresignedUrlForPart']);
+Route::post('/s3/complete-multipart-upload', [FileController::class, 'completeMultipartUpload']);
 

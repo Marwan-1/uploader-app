@@ -8,17 +8,11 @@ use Illuminate\Support\Facades\Log;
 
 class FileController extends Controller
 {
+    protected $s3Client;
 
-public function generatePresignedUrl(Request $request)
+    public function __construct()
     {
-        // $validatedData = $request->validate([
-        //     'file_name' => 'required|string',
-        // ]);
-
-        // Log::info("generate presigned url function called");
-
-        // Create an S3 client instance
-        $s3Client = new S3Client([
+        $this->s3Client = new S3Client([
             'version' => 'latest',
             'region'  => config('filesystems.disks.s3.region'),
             'credentials' => [
@@ -26,28 +20,56 @@ public function generatePresignedUrl(Request $request)
                 'secret' => config('filesystems.disks.s3.secret'),
             ],
         ]);
+    }
 
-        // Define the S3 bucket and key
+    public function initiateMultipartUpload(Request $request)
+    {
         $bucket = config('filesystems.disks.s3.bucket');
-        //insert in folder uploads _ uniqid _ file_name
         $key = 'uploads/' . uniqid() . '-' . $request->file_name;
 
-        // Generate a pre-signed URL for a PUT request
-        $cmd = $s3Client->getCommand('PutObject', [
+        $result = $this->s3Client->createMultipartUpload([
             'Bucket' => $bucket,
-            'Key'    => $key, // $request->file_name if you dont want any hash naming 
-            'ACL'    => 'public-read', // or 'private',
-            'ContentType' => $request->file_type // Set the content type
+            'Key'    => $key,
+            'ACL'    => 'public-read',
+            'ContentType' => $request->file_type,
         ]);
 
-        $request = $s3Client->createPresignedRequest($cmd, '+20 minutes'); //+1 hours , +2 hours
-
-        // Get the pre-signed URL
-        $presignedUrl = (string) $request->getUri();
-
         return response()->json([
-            'url' => $presignedUrl,
+            'uploadId' => $result['UploadId'],
+            'key' => $key,
         ]);
     }
 
+    public function generatePresignedUrlForPart(Request $request)
+    {
+        $bucket = config('filesystems.disks.s3.bucket');
+        $cmd = $this->s3Client->getCommand('UploadPart', [
+            'Bucket' => $bucket,
+            'Key'    => $request->key,
+            'UploadId' => $request->uploadId,
+            'PartNumber' => $request->partNumber,
+        ]);
+
+        $presignedRequest = $this->s3Client->createPresignedRequest($cmd, '+20 minutes');
+
+        return response()->json([
+            'url' => (string) $presignedRequest->getUri(),
+        ]);
+    }
+
+    public function completeMultipartUpload(Request $request)
+    {
+        $bucket = config('filesystems.disks.s3.bucket');
+
+        $result = $this->s3Client->completeMultipartUpload([
+            'Bucket' => $bucket,
+            'Key'    => $request->key,
+            'UploadId' => $request->uploadId,
+            'MultipartUpload' => [
+                'Parts' => $request->parts,
+            ],
+        ]);
+
+        return response()->json(['location' => $result['Location']]);
+    }
 }
