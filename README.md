@@ -25,7 +25,10 @@ AWS_BUCKET=
 ++++++++++++++++++++++++++++
 
 #2#
-run `php artisan serve` and go to `/` to view dropzone.
+run in cmd in cloned directory:
+`composer install`
+`php artisan key:generate`
+`php artisan serve` and go to `/` to view dropzone.
 
 #Ensure that your S3 bucket has the appropriate CORS configuration to allow uploads from your domain.
 
