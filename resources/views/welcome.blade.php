@@ -31,6 +31,10 @@
          // Upload one file at a time since we're using the S3 pre-signed URL scenario
         parallelUploads: 1,
         uploadMultiple: false,
+        
+        timeout: 0, // No timeout for the XHR request
+        maxFilesize: null, // No limit on the file size
+
         autoProcessQueue: false,
 
         // Content-Type should be included, otherwise you'll get a signature
