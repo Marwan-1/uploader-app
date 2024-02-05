@@ -45,7 +45,7 @@
         defaultHeaders: false,
         binaryBody: true,
 
-        autoProcessQueue: true,
+        autoProcessQueue: false,
 
         addRemoveLinks: true, // Add remove links to each file preview
         
@@ -75,7 +75,7 @@
                 console.log("Multipart upload completed for file", file.name, response.data);
                 done();
             }).catch(function (error) {
-                console.error("Failed to complete S3 upload for file", file.name, error);
+                // console.error("Failed to complete S3 upload for file", file.name, error);
                 done("Failed to complete upload");
             });
         },
@@ -96,7 +96,7 @@
                 file.s3Key = response.data.key;
                 myDropzone.processFile(file);
             }).catch(function(error) {
-                console.error("Failed to initiate S3 upload", error);
+                // console.error("Failed to initiate S3 upload", error);
             });
         });
     
@@ -171,13 +171,13 @@
                 // console.error("Failed to get a presigned URL for chunk", error);
             });
         } else {
-        console.error("No chunks found in file.upload.chunks");
+        // console.error("No chunks found in file.upload.chunks");
     }
         });
     
-        this.on("error", function(file, response) {
-            console.error("Dropzone error:", response);
-        });
+        // this.on("error", function(file, response) {
+        //     console.error("Dropzone error:", response);
+        // });
 
             this.on("success", function (file, response) {
                 //only gets here when done is called on chunksuploaded
