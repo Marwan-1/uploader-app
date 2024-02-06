@@ -15,7 +15,7 @@
 <!-- Add your HTML content here -->
 
 
-<!-- <form method="post" action="/upload"  enctype="multipart/form-data" class="dropzone" id="my-dropzone">
+<!-- <form method="post" action="/"  enctype="multipart/form-data" class="dropzone" id="my-dropzone">
     @csrf
 </form> -->
 <form class="dropzone" id="my-dropzone"></form>
@@ -26,8 +26,10 @@
     Dropzone.autoDiscover = false;
 
     let myDropzone = new Dropzone("#my-dropzone", {
-        url: '/dummy',
-        method: 'put',
+
+        //?
+        url: '#',
+        method: 'PUT',
          // Upload one file at a time since we're using the S3 pre-signed URL scenario
         parallelUploads: 1,
         uploadMultiple: false,
@@ -48,16 +50,10 @@
         autoProcessQueue: false,
 
         addRemoveLinks: true, // Add remove links to each file preview
-        
-        // Content-Type should be included, otherwise you'll get a signature
-        // mismatch error from S3. We're going to update this for each file.
-        headers: '',
-    
+     
         
         chunksUploaded: function (file, done) {
-            //console.log("All chunks have been uploaded for file:", file.name);
-            //console.log("file.chunkETags:", file.chunkETags);
-
+        
             // Ensure that the ETags are available and in the correct format
             let parts = file.chunkETags.map((etag, index) => {
                 //console.log(`Mapping ETag at index ${index}:`, etag);
@@ -80,8 +76,7 @@
             });
         },
 
-        init: function() {
-        this.on("addedfile", function(file) {
+        accept: function (file, done) {
             console.log("File added:", file.name);
 
             // Initialize an array to store ETags for each chunk
@@ -90,94 +85,114 @@
             axios.post('/s3/initiate-multipart-upload', {
                 file_name: file.name,
                 file_type: file.type
-            }).then(function(response) {
+            }).then(function (response) {
                 // console.log("Initiated multipart upload:", response.data);
                 file.uploadId = response.data.uploadId;
                 file.s3Key = response.data.key;
-                myDropzone.processFile(file);
-            }).catch(function(error) {
-                // console.error("Failed to initiate S3 upload", error);
+                // If the initiation is successful, process the file
+                done();
+                
+                myDropzone.processFile(file); // Start processing the file
+            }).catch(function (error) {
+                console.error("Failed to initiate S3 upload", error);
+                // If there is an error, reject the file with the error message
+                done("Failed to initiate S3 upload");
             });
-        });
+        },
+      
+        sending: function (file, xhr){
+
+                console.log("Sending file:", file.name);
+                // console.log("all file props:", file);
+                // console.log("xhr props:", xhr);
+
+                if (!file.chunkETags) {
+                    file.chunkETags = [];
+                }
+                
+                // If chunking is enabled, there should be a chunks array
+                if (file.upload.chunks && file.upload.chunks.length > 0) {
+                    // Get the current chunk's data
+                    let currentChunk = file.upload.chunks[file.upload.chunks.length - 1];
+                    // The chunkIndex should be 1-based for S3, so add 1
+                    let chunkIndex = currentChunk.dataBlock.chunkIndex + 1;
+                    // console.log("Chunk Index:", chunkIndex);
+
+                    axios.get('/s3/generate-presigned-url', {
+                        params: {
+                            key: file.s3Key,
+                            uploadId: file.uploadId,
+                            partNumber: chunkIndex
+                        }
+                    }).then(function (response) {
+                        // console.log("Received presigned URL for chunk:", chunkIndex, response.data.url);
+                     
+                        // Set the URL to the signed URL for this chunk
+                        xhr.open('PUT', response.data.url, true);
+                        // Set headers if required by S3
+                        // xhr.setRequestHeader('Content-Type', file.type);
+
+                        // Override the onload function
+                        let originalOnload = xhr.onload;
+                        xhr.onload = function (e) {
+                                // Call the original onload function
+                            if (originalOnload) {
+                                originalOnload.call(xhr, e);
+                            }
+                            // Custom ETag logic
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                let etag = xhr.getResponseHeader('ETag');
+                                if (etag) {
+                                    // Ensure the file.chunkETags array is initialized
+                                    if (!file.chunkETags) {
+                                        file.chunkETags = [];
+                                    }
+                                    // Store the ETag for this chunk
+                                    file.chunkETags[chunkIndex - 1] = etag.replace(/"/g, '');
+                                    // console.log("Stored ETag for chunk", chunkIndex, ":", etag);
+                                }
+                            }
+
+                        };
+
+                        // Send the chunk data
+                        // console.log("Sending chunk data:", currentChunk.dataBlock.data);
+                        xhr.send(currentChunk.dataBlock.data);
+                    }).catch(function (error) {
+                        // console.error("Failed to get a presigned URL for chunk", error);
+                    });
+                } else {
+                    // console.error("No chunks found in file.upload.chunks");
+                }
+                
+        },
     
 
+        init: function() {
 
+        // Event listener for upload progress
+        this.on("uploadprogress", function(file, progress, bytesSent) {
+            if (file) { // Check if the file object is defined
+                // console.log("File:", file.name, "Progress:", progress, "Bytes Sent:", bytesSent);
+                // Update your UI with the progress here
+                
 
-        this.on("sending", function(file, xhr) {
-            console.log("Sending file:", file.name);
-            // console.log("all file props:", file);
-            // console.log("xhr props:", xhr);
-            
-            if(!file.chunkETags){
-                file.chunkETags=[];
             }
-
-            // If chunking is enabled, there should be a chunks array
-        if (file.upload.chunks && file.upload.chunks.length > 0) {
-        // Get the current chunk's data
-        let currentChunk = file.upload.chunks[file.upload.chunks.length - 1];
-        // The chunkIndex should be 1-based for S3, so add 1
-        let chunkIndex = currentChunk.dataBlock.chunkIndex + 1;
-        // console.log("Chunk Index:", chunkIndex);
-        
-        //this works!!
-
-           // Override the onload function
-        let originalOnload = xhr.onload;
-        xhr.onload = function(e) {
-
-              // Custom ETag logic
-              if (xhr.status >= 200 && xhr.status < 300) {
-                let etag = xhr.getResponseHeader('ETag');
-                if (etag) {
-                    // Ensure the file.chunkETags array is initialized
-                    if (!file.chunkETags) {
-                        file.chunkETags = [];
-                    }
-                    // Store the ETag for this chunk
-                    file.chunkETags[chunkIndex - 1] = etag.replace(/"/g, '');
-                    // console.log("Stored ETag for chunk", chunkIndex, ":", etag);
-                }
-            }
-
-
-            // Call the original onload function
-            if (originalOnload) {
-                originalOnload(e);
-            }
-
-          
-        };
-        
-   
-            axios.get('/s3/generate-presigned-url', {
-                params: {
-                    key: file.s3Key,
-                    uploadId: file.uploadId,
-                    partNumber: chunkIndex
-                }
-            }).then(function(response) {
-                // console.log("Received presigned URL for chunk:", chunkIndex, response.data.url);
-                // Set the URL to the signed URL for this chunk
-                xhr.open('PUT', response.data.url, true);
-                // Set headers if required by S3
-                // xhr.setRequestHeader('Content-Type', file.type);
-
-                // Send the chunk data
-                // console.log("Sending chunk data:", currentChunk.dataBlock.data);
-                xhr.send(currentChunk.dataBlock.data);
-           
-            }).catch(function(error) {
-                // console.error("Failed to get a presigned URL for chunk", error);
-            });
-        } else {
-        // console.error("No chunks found in file.upload.chunks");
-    }
         });
+
+        // Event listener for overall upload progress
+        this.on("totaluploadprogress", function(totalProgress, totalBytes, totalBytesSent) {
+            // console.log(`Total Progress: ${totalProgress}%`);
+            // You can update the overall progress UI here
+        });
+
+        
+
+
     
-        // this.on("error", function(file, response) {
-        //     console.error("Dropzone error:", response);
-        // });
+        this.on("error", function(file, response) {
+            console.error("Dropzone error:", response);
+        });
 
             this.on("success", function (file, response) {
                 //only gets here when done is called on chunksuploaded
@@ -186,6 +201,7 @@
 
             });
 
+      
 
         
     }

@@ -35,6 +35,7 @@ class FileController extends Controller
 
     }
 
+
     public function initiateMultipartUpload(Request $request)
     {
         // Log::info('Received request to initiate multipart upload.', ['file_name' => $request->file_name]);
@@ -70,7 +71,7 @@ class FileController extends Controller
     {
         $bucket = config('filesystems.disks.s3.bucket');
 
-        Log::info("Uploading part", ['PartNumber' => $request->partNumber]);
+        // Log::info("Uploading part", ['PartNumber' => $request->partNumber]);
 
         $cmd = $this->s3Client->getCommand('UploadPart', [
             'Bucket' => $bucket,
@@ -106,7 +107,7 @@ class FileController extends Controller
         ]);
 
         // Return a successful response
-        // Log::info('Multipart upload completed.', ['location' => $result['Location']]);
+        Log::info('Multipart upload completed.', ['location' => $result['Location']]);
         return response()->json(['location' => $result['Location']]);
     }
 }
